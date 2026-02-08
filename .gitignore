@@ -1,0 +1,19 @@
+# Node
+node_modules/
+
+# Environment
+.env
+
+# Database
+poro.sqlite
+*.sqlite
+*.sqlite-journal
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log

@@ -1,0 +1,244 @@
+[
+  {
+    "id": "classic_poro",
+    "name": "Classic Poro",
+    "rarity": "common",
+    "weight": 18,
+    "baseCatch": 0.38,
+    "xpBonus": 0,
+    "statRanges": {
+      "size": { "min": 2, "max": 4 },
+      "weight": { "min": 10, "max": 14 },
+      "throwDistance": { "min": 6, "max": 9 },
+      "fluffiness": { "min": 8, "max": 10 },
+      "hunger": { "min": 6, "max": 9 }
+    }
+  },
+  {
+    "id": "freljord_poro",
+    "name": "Freljord Poro",
+    "rarity": "common",
+    "weight": 14,
+    "baseCatch": 0.36,
+    "xpBonus": 0,
+    "statRanges": {
+      "size": { "min": 3, "max": 4 },
+      "weight": { "min": 11, "max": 16 },
+      "throwDistance": { "min": 5, "max": 8 },
+      "fluffiness": { "min": 9, "max": 10 },
+      "hunger": { "min": 5, "max": 8 }
+    }
+  },
+  {
+    "id": "mustache_poro",
+    "name": "Mustache Poro",
+    "rarity": "common",
+    "weight": 12,
+    "baseCatch": 0.36,
+    "xpBonus": 0,
+    "statRanges": {
+      "size": { "min": 3, "max": 4 },
+      "weight": { "min": 12, "max": 17 },
+      "throwDistance": { "min": 5, "max": 7 },
+      "fluffiness": { "min": 7, "max": 9 },
+      "hunger": { "min": 4, "max": 7 }
+    }
+  },
+  {
+    "id": "hungry_poro",
+    "name": "Hungry Poro",
+    "rarity": "common",
+    "weight": 12,
+    "baseCatch": 0.40,
+    "xpBonus": 0,
+    "statRanges": {
+      "size": { "min": 2, "max": 4 },
+      "weight": { "min": 10, "max": 15 },
+      "throwDistance": { "min": 6, "max": 9 },
+      "fluffiness": { "min": 7, "max": 9 },
+      "hunger": { "min": 8, "max": 10 }
+    }
+  },
+  {
+    "id": "demacia_poro",
+    "name": "Demacia Poro",
+    "rarity": "common",
+    "weight": 10,
+    "baseCatch": 0.35,
+    "xpBonus": 0,
+    "statRanges": {
+      "size": { "min": 3, "max": 5 },
+      "weight": { "min": 13, "max": 18 },
+      "throwDistance": { "min": 4, "max": 7 },
+      "fluffiness": { "min": 6, "max": 8 },
+      "hunger": { "min": 4, "max": 7 }
+    }
+  },
+  {
+    "id": "noxus_poro",
+    "name": "Noxus Poro",
+    "rarity": "common",
+    "weight": 10,
+    "baseCatch": 0.34,
+    "xpBonus": 0,
+    "statRanges": {
+      "size": { "min": 3, "max": 5 },
+      "weight": { "min": 14, "max": 19 },
+      "throwDistance": { "min": 4, "max": 7 },
+      "fluffiness": { "min": 5, "max": 7 },
+      "hunger": { "min": 4, "max": 7 }
+    }
+  },
+  {
+    "id": "bilgewater_poro",
+    "name": "Bilgewater Poro",
+    "rarity": "common",
+    "weight": 9,
+    "baseCatch": 0.35,
+    "xpBonus": 0,
+    "statRanges": {
+      "size": { "min": 3, "max": 5 },
+      "weight": { "min": 12, "max": 17 },
+      "throwDistance": { "min": 5, "max": 8 },
+      "fluffiness": { "min": 6, "max": 8 },
+      "hunger": { "min": 5, "max": 8 }
+    }
+  },
+  {
+    "id": "shurima_poro",
+    "name": "Shurima Poro",
+    "rarity": "common",
+    "weight": 9,
+    "baseCatch": 0.35,
+    "xpBonus": 0,
+    "statRanges": {
+      "size": { "min": 3, "max": 5 },
+      "weight": { "min": 11, "max": 16 },
+      "throwDistance": { "min": 6, "max": 9 },
+      "fluffiness": { "min": 5, "max": 7 },
+      "hunger": { "min": 5, "max": 8 }
+    }
+  },
+
+  {
+    "id": "porofly",
+    "name": "Porofly",
+    "rarity": "rare",
+    "weight": 6,
+    "baseCatch": 0.28,
+    "xpBonus": 8,
+    "statRanges": {
+      "size": { "min": 1, "max": 3 },
+      "weight": { "min": 4, "max": 8 },
+      "throwDistance": { "min": 9, "max": 12 },
+      "fluffiness": { "min": 5, "max": 7 },
+      "hunger": { "min": 5, "max": 8 }
+    }
+  },
+  {
+    "id": "piltover_poro",
+    "name": "Piltover Poro",
+    "rarity": "rare",
+    "weight": 5,
+    "baseCatch": 0.27,
+    "xpBonus": 10,
+    "statRanges": {
+      "size": { "min": 3, "max": 5 },
+      "weight": { "min": 10, "max": 15 },
+      "throwDistance": { "min": 7, "max": 10 },
+      "fluffiness": { "min": 6, "max": 8 },
+      "hunger": { "min": 4, "max": 7 }
+    }
+  },
+  {
+    "id": "zaun_poro",
+    "name": "Zaun Poro",
+    "rarity": "rare",
+    "weight": 5,
+    "baseCatch": 0.26,
+    "xpBonus": 10,
+    "statRanges": {
+      "size": { "min": 3, "max": 5 },
+      "weight": { "min": 9, "max": 14 },
+      "throwDistance": { "min": 8, "max": 11 },
+      "fluffiness": { "min": 5, "max": 7 },
+      "hunger": { "min": 5, "max": 8 }
+    }
+  },
+  {
+    "id": "shadow_isles_poro",
+    "name": "Shadow Isles Poro",
+    "rarity": "rare",
+    "weight": 4,
+    "baseCatch": 0.22,
+    "xpBonus": 18,
+    "statRanges": {
+      "size": { "min": 4, "max": 6 },
+      "weight": { "min": 12, "max": 17 },
+      "throwDistance": { "min": 4, "max": 7 },
+      "fluffiness": { "min": 6, "max": 8 },
+      "hunger": { "min": 3, "max": 6 }
+    }
+  },
+  {
+    "id": "void_poro",
+    "name": "Void Poro",
+    "rarity": "rare",
+    "weight": 4,
+    "baseCatch": 0.21,
+    "xpBonus": 20,
+    "statRanges": {
+      "size": { "min": 4, "max": 6 },
+      "weight": { "min": 11, "max": 16 },
+      "throwDistance": { "min": 5, "max": 8 },
+      "fluffiness": { "min": 4, "max": 6 },
+      "hunger": { "min": 6, "max": 9 }
+    }
+  },
+  {
+    "id": "dark_star_poro",
+    "name": "Dark Star Poro",
+    "rarity": "rare",
+    "weight": 3,
+    "baseCatch": 0.20,
+    "xpBonus": 24,
+    "statRanges": {
+      "size": { "min": 5, "max": 7 },
+      "weight": { "min": 13, "max": 18 },
+      "throwDistance": { "min": 3, "max": 6 },
+      "fluffiness": { "min": 5, "max": 7 },
+      "hunger": { "min": 4, "max": 7 }
+    }
+  },
+
+  {
+    "id": "golden_poro",
+    "name": "Golden Poro",
+    "rarity": "ultra_rare",
+    "weight": 1,
+    "baseCatch": 0.14,
+    "xpBonus": 45,
+    "statRanges": {
+      "size": { "min": 6, "max": 8 },
+      "weight": { "min": 16, "max": 22 },
+      "throwDistance": { "min": 2, "max": 5 },
+      "fluffiness": { "min": 8, "max": 10 },
+      "hunger": { "min": 4, "max": 7 }
+    }
+  },
+  {
+    "id": "king_poro",
+    "name": "King Poro",
+    "rarity": "ultra_rare",
+    "weight": 1,
+    "baseCatch": 0.12,
+    "xpBonus": 60,
+    "fixedStats": {
+      "size": 10,
+      "weight": 30,
+      "throwDistance": 1,
+      "fluffiness": 10,
+      "hunger": 7
+    }
+  }
+]
