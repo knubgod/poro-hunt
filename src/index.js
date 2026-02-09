@@ -309,7 +309,7 @@ async function maybePostWeeklyShowcase() {
 client.once(Events.ClientReady, () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
-  for (const [guildId] of client.guilds.cache) scheduleNextSpawn(guildId);
+  for (const [guildId] of client.guilds.cache) scheduleNextSpawnTs(guildId);
 
  setInterval(async () => {
   for (const [guildId] of client.guilds.cache) {
