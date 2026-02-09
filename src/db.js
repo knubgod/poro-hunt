@@ -123,5 +123,11 @@ tryAddColumn("ALTER TABLE users ADD COLUMN food INTEGER NOT NULL DEFAULT 0");
 tryAddColumn("ALTER TABLE users ADD COLUMN nets_armed INTEGER NOT NULL DEFAULT 0");
 tryAddColumn("ALTER TABLE users ADD COLUMN last_free_food_ts INTEGER NOT NULL DEFAULT 0");
 tryAddColumn("ALTER TABLE user_catches ADD COLUMN hunger_updated_ts INTEGER");
+tryAddColumn("ALTER TABLE config ADD COLUMN daily_spawn_target INTEGER NOT NULL DEFAULT 6");
+tryAddColumn("ALTER TABLE config ADD COLUMN daily_spawn_date TEXT");
+tryAddColumn("ALTER TABLE config ADD COLUMN daily_spawn_count INTEGER NOT NULL DEFAULT 0");
+tryAddColumn("ALTER TABLE config ADD COLUMN next_spawn_ts INTEGER NOT NULL DEFAULT 0");
+
+tryAddColumn("ALTER TABLE spawns ADD COLUMN first_interaction_ts INTEGER NOT NULL DEFAULT 0");
 
 module.exports = db;

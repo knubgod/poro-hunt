@@ -7,7 +7,7 @@
  */
 
 const db = require("../db");
-const { getActiveSpawn, clearActiveSpawn } = require("../game/spawnManager");
+const { getActiveSpawn, clearActiveSpawn, onSpawnInteracted } = require("../game/spawnManager");
 const { getPoroById } = require("../game/poroCatalog");
 const { rollCatch, getXpReward } = require("../game/poroLogic");
 const { MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
@@ -58,16 +58,13 @@ async function handleButton(interaction) {
   const userId = interaction.user.id;
 
   /**
-   * ---------------------------
    * Admin reset confirm/cancel
-   * ---------------------------
    */
   if (interaction.customId === "admin_reset_cancel") {
     return interaction.update({ content: "✅ Reset cancelled.", components: [] });
   }
 
   if (interaction.customId === "admin_reset_confirm") {
-    // Wipe server game data
     db.prepare(`DELETE FROM spawn_attempts WHERE guild_id = ?`).run(guildId);
     db.prepare(`DELETE FROM spawn_berry WHERE guild_id = ?`).run(guildId);
     db.prepare(`DELETE FROM spawns WHERE guild_id = ?`).run(guildId);
@@ -80,17 +77,17 @@ async function handleButton(interaction) {
   }
 
   /**
-   * ---------------------------
    * Toss Berry (spawn boost)
-   * ---------------------------
    */
   if (interaction.customId === "poro_toss_berry") {
     const spawn = getActiveSpawn(guildId);
 
-    // Must be the active spawn message
     if (!spawn || interaction.message.id !== spawn.message_id) {
       return interaction.reply({ content: "No active poro to feed right now.", flags: MessageFlags.Ephemeral });
     }
+
+    // Mark that the spawn has been interacted with (starts flee window)
+    await onSpawnInteracted(interaction.client, guildId);
 
     const user = getUser(guildId, userId);
     if ((user.berries || 0) <= 0) {
@@ -101,7 +98,6 @@ async function handleButton(interaction) {
       return interaction.reply({ content: "You already tossed a berry at this poro.", flags: MessageFlags.Ephemeral });
     }
 
-    // Consume 1 berry and record per-spawn boost
     db.prepare(`UPDATE users SET berries = berries - 1 WHERE guild_id = ? AND user_id = ?`).run(guildId, userId);
     recordBerryToss(guildId, spawn.message_id, userId);
 
@@ -112,9 +108,7 @@ async function handleButton(interaction) {
   }
 
   /**
-   * ---------------------------
    * Catch attempt
-   * ---------------------------
    */
   if (interaction.customId !== "poro_catch") return;
 
@@ -123,10 +117,12 @@ async function handleButton(interaction) {
     return interaction.reply({ content: "Too slow — no poro is active right now.", flags: MessageFlags.Ephemeral });
   }
 
-  // Prevent catching old messages if a new spawn happened
   if (interaction.message.id !== spawn.message_id) {
     return interaction.reply({ content: "That poro is no longer active.", flags: MessageFlags.Ephemeral });
   }
+
+  // Mark first interaction (starts flee window)
+  await onSpawnInteracted(interaction.client, guildId);
 
   if (hasAttempted(guildId, spawn.message_id, userId)) {
     return interaction.reply({ content: "You already tried to catch this poro!", flags: MessageFlags.Ephemeral });
@@ -149,10 +145,8 @@ async function handleButton(interaction) {
 
   const user = getUser(guildId, userId);
 
-  // Base chance + small level bonus
   let chance = poro.baseCatch + (user.level * 0.005);
 
-  // Per-spawn berry toss bonus (consumed if present)
   const tossed = !!hasTossedBerry(guildId, spawn.message_id, userId);
   if (tossed) {
     chance += TOSS_BERRY_BONUS;
@@ -165,10 +159,8 @@ async function handleButton(interaction) {
   const gainedXp = getXpReward(success, poro.xpBonus);
 
   if (success) {
-    // Stop the active spawn in DB
     clearActiveSpawn(guildId);
 
-    // Disable the spawn message buttons publicly
     const disabledRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("poro_caught")
@@ -184,7 +176,6 @@ async function handleButton(interaction) {
 
     await interaction.message.edit({ components: [disabledRow] }).catch(() => {});
 
-    // Apply reward (writes instance + aggregates + gold)
     const reward = applyCatchSuccess({
       guildId,
       userId,
@@ -194,7 +185,6 @@ async function handleButton(interaction) {
       stats: spawnStats,
     });
 
-    // Build naming button row BEFORE reply
     const nameRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`poro_name:${reward.catchId}`)
@@ -213,7 +203,6 @@ async function handleButton(interaction) {
     });
   }
 
-  // Failure path
   return interaction.reply({
     content:
       `❌ The **${poro.name}** slipped away… (+${gainedXp} XP)\n` +

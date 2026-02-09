@@ -21,6 +21,114 @@ const { trySpawnPoro } = require("./game/spawnManager");
 const { loadPoros } = require("./game/poroCatalog");
 const db = require("./db");
 
+function ymdLocal() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function randInt(min, max) {
+  return Math.floor(min + Math.random() * (max - min + 1));
+}
+
+function getConfig(guildId) {
+  const row = db.prepare(`SELECT * FROM config WHERE guild_id = ?`).get(guildId);
+  if (row) return row;
+
+  db.prepare(`INSERT INTO config (guild_id) VALUES (?)`).run(guildId);
+  return db.prepare(`SELECT * FROM config WHERE guild_id = ?`).get(guildId);
+}
+
+/**
+ * Schedules the next spawn time using:
+ * - target spawns/day (default 6)
+ * - remaining time today
+ * - remaining spawns today
+ * Random, but guaranteed.
+ */
+function scheduleNextSpawnTs(guildId) {
+  const cfg = getConfig(guildId);
+  const today = ymdLocal();
+
+  // Reset daily counters if new day
+  if (cfg.daily_spawn_date !== today) {
+    db.prepare(`
+      UPDATE config
+      SET daily_spawn_date = ?, daily_spawn_count = 0
+      WHERE guild_id = ?
+    `).run(today, guildId);
+  }
+
+  const cfg2 = getConfig(guildId);
+  const target = cfg2.daily_spawn_target || 6;
+  const done = cfg2.daily_spawn_count || 0;
+
+  // If we've hit today's quota, schedule just after midnight
+  if (done >= target) {
+    const now = new Date();
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 5, 0).getTime(); // 12:05am
+    db.prepare(`UPDATE config SET next_spawn_ts = ? WHERE guild_id = ?`).run(midnight, guildId);
+    return midnight;
+  }
+
+  const nowTs = Date.now();
+
+  // End of day (11:59pm local)
+  const now = new Date();
+  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 0).getTime();
+
+  const remainingSpawns = target - done;
+  const remainingMs = Math.max(60_000, endOfDay - nowTs);
+
+  // Average spacing needed to fit remaining spawns in remaining time
+  const avgGap = Math.floor(remainingMs / remainingSpawns);
+
+  // Randomize around avg gap:
+  // - minimum gap 10 minutes
+  // - maximum gap ~2x avg gap (capped to 6 hours so it doesn't go dead)
+  const minGap = 10 * 60 * 1000;
+  const maxGap = Math.min(6 * 60 * 60 * 1000, Math.max(minGap, avgGap * 2));
+
+  const nextTs = nowTs + randInt(minGap, maxGap);
+
+  db.prepare(`UPDATE config SET next_spawn_ts = ? WHERE guild_id = ?`).run(nextTs, guildId);
+  return nextTs;
+}
+
+function shouldSpawnNow(guildId) {
+  const cfg = getConfig(guildId);
+  const next = cfg.next_spawn_ts || 0;
+  if (next === 0) {
+    scheduleNextSpawnTs(guildId);
+    return false;
+  }
+  return Date.now() >= next;
+}
+
+function markSpawnHappened(guildId) {
+  const today = ymdLocal();
+  const cfg = getConfig(guildId);
+
+  // If date changed, reset first
+  if (cfg.daily_spawn_date !== today) {
+    db.prepare(`
+      UPDATE config
+      SET daily_spawn_date = ?, daily_spawn_count = 0
+      WHERE guild_id = ?
+    `).run(today, guildId);
+  }
+
+  db.prepare(`
+    UPDATE config
+    SET daily_spawn_count = daily_spawn_count + 1
+    WHERE guild_id = ?
+  `).run(guildId);
+
+  scheduleNextSpawnTs(guildId);
+}
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
@@ -34,24 +142,107 @@ client.commands.set(poroCommand.data.name, poroCommand);
  * Spawn scheduling
  * Mostly hours; back-to-back rare.
  */
-const nextSpawnAt = new Map();
+/**
+ * Spawn scheduling (quota-per-day + random)
+ * - Guarantees ~N spawns per day (default 6)
+ * - Still randomized timing
+ * - Persists schedule in DB so restarts don't "reset" randomness
+ */
 
-function randomMsBetween(minMs, maxMs) {
-  return Math.floor(minMs + Math.random() * (maxMs - minMs + 1));
+const db = require("./db");
+
+function ymdLocal() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
-// Adjust as you like
-function rollNextSpawnDelayMs() {
-  const r = Math.random();
-  if (r < 0.02) return randomMsBetween(5 * 60 * 1000, 15 * 60 * 1000);
-  if (r < 0.10) return randomMsBetween(15 * 60 * 1000, 30 * 60 * 1000);
-  if (r < 0.40) return randomMsBetween(30 * 60 * 1000, 90 * 60 * 1000);
-  if (r < 0.80) return randomMsBetween(90 * 60 * 1000, 240 * 60 * 1000);
-  return randomMsBetween(240 * 60 * 1000, 480 * 60 * 1000);
+function randInt(min, max) {
+  return Math.floor(min + Math.random() * (max - min + 1));
 }
 
-function scheduleNextSpawn(guildId) {
-  nextSpawnAt.set(guildId, Date.now() + rollNextSpawnDelayMs());
+function getConfig(guildId) {
+  let row = db.prepare(`SELECT * FROM config WHERE guild_id = ?`).get(guildId);
+  if (!row) {
+    db.prepare(`INSERT INTO config (guild_id) VALUES (?)`).run(guildId);
+    row = db.prepare(`SELECT * FROM config WHERE guild_id = ?`).get(guildId);
+  }
+  return row;
+}
+
+function scheduleNextSpawnTs(guildId) {
+  const today = ymdLocal();
+  const cfg = getConfig(guildId);
+
+  // Reset counter on a new day
+  if (cfg.daily_spawn_date !== today) {
+    db.prepare(`
+      UPDATE config
+      SET daily_spawn_date = ?, daily_spawn_count = 0
+      WHERE guild_id = ?
+    `).run(today, guildId);
+  }
+
+  const cfg2 = getConfig(guildId);
+  const target = cfg2.daily_spawn_target || 6;
+  const done = cfg2.daily_spawn_count || 0;
+
+  // If we hit quota, schedule just after midnight
+  if (done >= target) {
+    const now = new Date();
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 5, 0).getTime();
+    db.prepare(`UPDATE config SET next_spawn_ts = ? WHERE guild_id = ?`).run(midnight, guildId);
+    return midnight;
+  }
+
+  const nowTs = Date.now();
+  const now = new Date();
+  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 0).getTime();
+
+  const remainingSpawns = Math.max(1, target - done);
+  const remainingMs = Math.max(60_000, endOfDay - nowTs);
+  const avgGap = Math.floor(remainingMs / remainingSpawns);
+
+  // Random gap centered around what's needed to fit the remaining spawns today
+  const minGap = 10 * 60 * 1000; // 10 min
+  const maxGap = Math.min(6 * 60 * 60 * 1000, Math.max(minGap, avgGap * 2)); // cap at 6h
+
+  const nextTs = nowTs + randInt(minGap, maxGap);
+  db.prepare(`UPDATE config SET next_spawn_ts = ? WHERE guild_id = ?`).run(nextTs, guildId);
+  return nextTs;
+}
+
+function shouldSpawnNow(guildId) {
+  const cfg = getConfig(guildId);
+  const next = cfg.next_spawn_ts || 0;
+  if (next === 0) {
+    scheduleNextSpawnTs(guildId);
+    return false;
+  }
+  return Date.now() >= next;
+}
+
+function markSpawnHappened(guildId) {
+  const today = ymdLocal();
+  const cfg = getConfig(guildId);
+
+  if (cfg.daily_spawn_date !== today) {
+    db.prepare(`
+      UPDATE config
+      SET daily_spawn_date = ?, daily_spawn_count = 0
+      WHERE guild_id = ?
+    `).run(today, guildId);
+  }
+
+  db.prepare(`
+    UPDATE config
+    SET daily_spawn_count = daily_spawn_count + 1
+    WHERE guild_id = ?
+  `).run(guildId);
+
+  scheduleNextSpawnTs(guildId);
 }
 
 function buildWeeklyShowcaseText(guildId) {
@@ -122,16 +313,23 @@ client.once(Events.ClientReady, () => {
 
   for (const [guildId] of client.guilds.cache) scheduleNextSpawn(guildId);
 
-  setInterval(async () => {
-    const now = Date.now();
-    for (const [guildId] of client.guilds.cache) {
-      if (!nextSpawnAt.has(guildId)) scheduleNextSpawn(guildId);
-      if (now < nextSpawnAt.get(guildId)) continue;
+ setInterval(async () => {
+  for (const [guildId] of client.guilds.cache) {
+    if (!shouldSpawnNow(guildId)) continue;
 
-      await trySpawnPoro(client, guildId);
-      scheduleNextSpawn(guildId);
+    const result = await trySpawnPoro(client, guildId);
+    if (result.ok) {
+      markSpawnHappened(guildId);
+    } else {
+      // If there's already an active spawn, try again later
+      if (result.reason === "already_active") {
+        const soon = Date.now() + 15 * 60 * 1000;
+        db.prepare(`UPDATE config SET next_spawn_ts = ? WHERE guild_id = ?`).run(soon, guildId);
+      }
+      // If no channel set, admin needs to set it; don't keep rescheduling aggressively
     }
-  }, 15_000);
+  }
+}, 30_000);
 
   setInterval(async () => {
     await maybePostWeeklyShowcase();
