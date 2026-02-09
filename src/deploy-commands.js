@@ -5,7 +5,12 @@
  */
 
 require("dotenv").config();
-const { REST, Routes } = require("discord.js");
+const { Routes } = require("discord.js");
+
+rest.put(
+  Routes.applicationCommands(CLIENT_ID),
+  { body: commands }
+);
 
 const poroCommand = require("./commands/poro");
 
