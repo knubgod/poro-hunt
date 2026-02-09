@@ -41,6 +41,36 @@ function getConfig(guildId) {
   return db.prepare(`SELECT * FROM config WHERE guild_id = ?`).get(guildId);
 }
 
+// --- Onboarding message (sent when bot joins a new server) ---
+const WELCOME_MESSAGE =
+`🐾 **Poro Hunt is live!**
+
+I’ve added a Discord mini-game bot called **Poro Hunt**.
+
+From time to time, a **poro will appear** in the designated spawn channel. Anyone can try to catch it — but **only one person can successfully catch each poro per spawn**. Once a poro is caught, it’s gone!
+
+If one person fails and another succeeds, **only the successful catcher** gets that poro added to their collection.
+
+**How to play**
+- Use **/poro menu** to open your private Poro Hunt menu (no spam).
+- When a poro spawns, click **Catch** to attempt.
+- You can click **Toss Berry** first to boost *your* next catch attempt on that poro.
+- Catch results (success/fail, rewards, naming) are **private**, so the channel stays clean.
+
+**Progress & rewards**
+- Catches give **XP + gold**
+- Leveling unlocks **titles**
+- Gold is used in the **Shop** for items like **nets**
+- **Nets are 100%** and can catch poros while you’re offline
+- Food is used to feed your poros (hunger has **no penalties**, just flavor)
+
+**Goal**
+Collect **one of every poro** (you can still catch duplicates).
+
+**Admin setup**
+Run: **/poro admin setup** (set spawn channel + spawns/day)
+`;
+
 /**
  * Schedules the next spawn time using:
  * - target spawns/day (default 6)
@@ -335,6 +365,39 @@ client.once(Events.ClientReady, () => {
 });
 
 client.on("guildCreate", (guild) => scheduleNextSpawn(guild.id));
+
+client.on("guildCreate", async (guild) => {
+  try {
+    // Prefer system channel if available
+    let channel = guild.systemChannel;
+
+    // If no system channel, pick the first text channel we can send in
+    if (!channel) {
+      const textChannels = guild.channels.cache
+        .filter((c) => c.isTextBased && c.isTextBased())
+        .sort((a, b) => (a.rawPosition ?? 0) - (b.rawPosition ?? 0));
+
+      for (const c of textChannels.values()) {
+        // Some channel types may not support permission checks the same way; try/catch is fine
+        try {
+          const me = guild.members.me;
+          if (!me) continue;
+          const perms = c.permissionsFor(me);
+          if (perms && perms.has("SendMessages") && perms.has("ViewChannel")) {
+            channel = c;
+            break;
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (!channel) return;
+
+    await channel.send(WELCOME_MESSAGE);
+  } catch (err) {
+    console.error("Failed to send onboarding message:", err);
+  }
+});
 
 client.on("interactionCreate", async (interaction) => {
   try {
