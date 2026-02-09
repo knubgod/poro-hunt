@@ -149,8 +149,6 @@ client.commands.set(poroCommand.data.name, poroCommand);
  * - Persists schedule in DB so restarts don't "reset" randomness
  */
 
-const db = require("./db");
-
 function ymdLocal() {
   const d = new Date();
   const y = d.getFullYear();
