@@ -72,11 +72,13 @@ Run: **/poro admin setup** (set spawn channel + spawns/day)
 `;
 
 /**
- * Schedules the next spawn time using:
- * - target spawns/day (default 6)
+ * Schedules the next spawn time (persisted in config.next_spawn_ts) using:
+ * - target spawns/day
  * - remaining time today
  * - remaining spawns today
- * Random, but guaranteed.
+ *
+ * PLUS Quiet Hours:
+ * - Never schedules between 00:00 and 06:00 local time.
  */
 function scheduleNextSpawnTs(guildId) {
   const cfg = getConfig(guildId);
@@ -89,7 +91,96 @@ function scheduleNextSpawnTs(guildId) {
       SET daily_spawn_date = ?, daily_spawn_count = 0
       WHERE guild_id = ?
     `).run(today, guildId);
+
+    // Re-read after reset so our math uses the updated counter
+    cfg.daily_spawn_count = 0;
+    cfg.daily_spawn_date = today;
   }
+
+  const target = Math.max(1, cfg.daily_spawn_target || 6);
+  const count = Math.max(0, cfg.daily_spawn_count || 0);
+
+  // --- Quiet hours helpers (local time) ---
+  const QUIET_START = 0; // 00:00
+  const QUIET_END = 6;   // 06:00
+  const QUIET_JITTER_MAX_MIN = 30; // 0–30 min after 6am
+
+  function isQuiet(ts) {
+    const h = new Date(ts).getHours();
+    return h >= QUIET_START && h < QUIET_END;
+  }
+
+  function nextMorningTs(nowTs) {
+    const d = new Date(nowTs);
+    const h = d.getHours();
+
+    // If we're already past 6am, bump to tomorrow 6am; otherwise today 6am.
+    const addDay = h >= QUIET_END ? 1 : 0;
+
+    const t = new Date(
+      d.getFullYear(),
+      d.getMonth(),
+      d.getDate() + addDay,
+      QUIET_END,
+      0,
+      0,
+      0
+    );
+
+    // jitter to avoid exact 6:00am sync
+    t.setMinutes(Math.floor(Math.random() * (QUIET_JITTER_MAX_MIN + 1)));
+    return t.getTime();
+  }
+
+  // If we already hit quota for today, schedule for tomorrow morning (after quiet hours)
+  if (count >= target) {
+    const nextTs = nextMorningTs(Date.now());
+    db.prepare(`UPDATE config SET next_spawn_ts = ? WHERE guild_id = ?`).run(nextTs, guildId);
+    return nextTs;
+  }
+
+  const nowTs = Date.now();
+
+  // If it’s currently quiet hours, schedule the first eligible time after quiet hours
+  if (isQuiet(nowTs)) {
+    const nextTs = nextMorningTs(nowTs);
+    db.prepare(`UPDATE config SET next_spawn_ts = ? WHERE guild_id = ?`).run(nextTs, guildId);
+    return nextTs;
+  }
+
+  // Compute remaining spawns today
+  const remainingSpawns = Math.max(1, target - count);
+
+  // Compute end-of-day timestamp (local)
+  const now = new Date(nowTs);
+  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 30, 0).getTime();
+
+  // Remaining usable time today (but don't schedule into quiet hours anyway)
+  const remainingMs = Math.max(0, endOfDay - nowTs);
+
+  // Average spacing needed to fit remaining spawns in remaining time
+  const avg = Math.max(30 * 60 * 1000, Math.floor(remainingMs / remainingSpawns)); // floor at 30 min avg
+
+  // Random window around avg:
+  // - minimum gap: 10 minutes
+  // - maximum gap: min(6 hours, 2x avg)
+  const minGap = 10 * 60 * 1000;
+  const maxGap = Math.min(6 * 60 * 60 * 1000, Math.max(minGap, 2 * avg));
+
+  function randInt(min, max) {
+    return Math.floor(min + Math.random() * (max - min + 1));
+  }
+
+  let nextTs = nowTs + randInt(minGap, maxGap);
+
+  // If the rolled timestamp lands in quiet hours, bump to next morning
+  if (isQuiet(nextTs)) {
+    nextTs = nextMorningTs(nextTs);
+  }
+
+  db.prepare(`UPDATE config SET next_spawn_ts = ? WHERE guild_id = ?`).run(nextTs, guildId);
+  return nextTs;
+}
 
   const cfg2 = getConfig(guildId);
   const target = cfg2.daily_spawn_target || 6;
@@ -125,7 +216,6 @@ function scheduleNextSpawnTs(guildId) {
 
   db.prepare(`UPDATE config SET next_spawn_ts = ? WHERE guild_id = ?`).run(nextTs, guildId);
   return nextTs;
-}
 
 function shouldSpawnNow(guildId) {
   const cfg = getConfig(guildId);
