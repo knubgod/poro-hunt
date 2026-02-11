@@ -1,39 +1,35 @@
 /**
  * spawnManager.js
  *
- * Responsibilities:
- * 1) Create a public spawn message (with Catch + Toss Berry buttons)
- * 2) Store the "active spawn" record in SQLite (per guild)
- * 3) Ensure spawns never get stuck:
- *    - hard TTL expiration (15 minutes) ALWAYS
- *    - optional "engaged" flee window after first interaction (5 minutes)
- * 4) Offline nets:
- *    - 100% capture rate
- *    - silently deposits into net_stash (does NOT claim the public spawn)
+ * Core responsibilities
+ * - Post public spawn messages (Catch + Toss Berry)
+ * - Persist the current active spawn (per guild)
+ * - Prevent stuck spawns (15-min hard TTL)
+ * - Optional: shorten lifetime after first interaction (5-min engaged flee)
+ * - Offline nets: guaranteed catches into net_stash (does NOT claim public spawn)
  *
- * Exports used elsewhere:
- * - trySpawnPoro(client, guildId)
- * - getActiveSpawn(guildId)
- * - clearActiveSpawn(guildId)
- * - forceClearSpawn(guildId)
- * - onSpawnInteracted(client, guildId)
+ * Quiet Hours
+ * - Random spawns are suppressed between 00:00 and 06:00 local server time.
+ * - If a spawn attempt happens during quiet hours, it is postponed.
  */
 
 const db = require("../db");
 const { pickRandomPoro } = require("./poroCatalog");
 const { consumeArmedNet } = require("./items");
-const {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder,
-} = require("discord.js");
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require("discord.js");
 
-// --- Tunables ---
-const SPAWN_TTL_MS = 15 * 60 * 1000; // HARD expiry: 15 minutes after posting
-const FLEE_AFTER_FIRST_INTERACTION_MS = 5 * 60 * 1000; // After someone clicks something, flee after 5 minutes
+// -------------------- Tunables --------------------
+const SPAWN_TTL_MS = 15 * 60 * 1000; // hard expiry after posting
+const FLEE_AFTER_FIRST_INTERACTION_MS = 5 * 60 * 1000; // optional shorter timer once engaged
 
-// --- Helpers: config + spawn state ---
+// Quiet hours (local server time). Spawns won't POST during this window.
+const QUIET_START_HOUR = 0; // 00:00
+const QUIET_END_HOUR = 6;   // 06:00
+
+// Jitter (prevents "everything spawns at exactly 6:00am")
+const QUIET_JITTER_MINUTES_MAX = 30;
+
+// -------------------- DB helpers --------------------
 
 function getGuildConfig(guildId) {
   return db.prepare(`SELECT game_channel_id FROM config WHERE guild_id = ?`).get(guildId);
@@ -53,8 +49,8 @@ function forceClearSpawn(guildId) {
 }
 
 /**
- * Insert/replace the active spawn row for this guild.
- * NOTE: This assumes your spawns table has a UNIQUE(guild_id) or similar upsert conflict target.
+ * Upserts the single "active spawn" row per guild.
+ * Requires a UNIQUE constraint on spawns.guild_id.
  */
 function setActiveSpawn(guildId, channelId, messageId, poroId, stats) {
   db.prepare(`
@@ -107,7 +103,42 @@ function getFirstInteractionTs(guildId) {
   `).get(guildId)?.first_interaction_ts || 0;
 }
 
-// --- Helpers: stats rolling ---
+// -------------------- Quiet hours helpers --------------------
+
+function isQuietTime(ts = Date.now()) {
+  const d = new Date(ts);
+  const h = d.getHours();
+  return h >= QUIET_START_HOUR && h < QUIET_END_HOUR;
+}
+
+/**
+ * Returns a timestamp representing "today at QUIET_END_HOUR with jitter",
+ * OR "tomorrow at QUIET_END_HOUR with jitter" if we're already past the end hour.
+ */
+function nextAllowedSpawnTs(nowTs = Date.now()) {
+  const d = new Date(nowTs);
+  const hour = d.getHours();
+
+  // If it's before end hour, bump to today at end hour. If it's after, bump to tomorrow.
+  const bumpDay = hour >= QUIET_END_HOUR ? 1 : 0;
+
+  const target = new Date(
+    d.getFullYear(),
+    d.getMonth(),
+    d.getDate() + bumpDay,
+    QUIET_END_HOUR,
+    0,
+    0,
+    0
+  );
+
+  const jitterMin = Math.floor(Math.random() * (QUIET_JITTER_MINUTES_MAX + 1));
+  target.setMinutes(jitterMin);
+
+  return target.getTime();
+}
+
+// -------------------- Stat rolling --------------------
 
 function randInt(min, max) {
   const lo = Math.min(min, max);
@@ -115,10 +146,6 @@ function randInt(min, max) {
   return Math.floor(lo + Math.random() * (hi - lo + 1));
 }
 
-/**
- * Rolls stats for this spawn instance.
- * If the poro has fixedStats (e.g. King Poro), we respect them.
- */
 function rollSpawnStats(poro) {
   if (poro.fixedStats) return { ...poro.fixedStats };
   const r = poro.statRanges;
@@ -132,14 +159,8 @@ function rollSpawnStats(poro) {
   };
 }
 
-// --- Offline nets: 100% capture into net stash ---
+// -------------------- Offline nets (100% capture) --------------------
 
-/**
- * If a user has an armed net:
- * - consume one armed net charge
- * - guarantee a catch into net_stash
- * This is "offline loot" and does NOT end the public spawn.
- */
 function processNetsForSpawn(guildId, poro, stats) {
   const netUsers = db.prepare(`
     SELECT user_id, nets_armed
@@ -150,11 +171,9 @@ function processNetsForSpawn(guildId, poro, stats) {
   for (const u of netUsers) {
     if ((u.nets_armed || 0) <= 0) continue;
 
-    // Consume exactly one armed net
     const consumed = consumeArmedNet(guildId, u.user_id);
     if (!consumed) continue;
 
-    // Guaranteed net catch stored silently
     db.prepare(`
       INSERT INTO net_stash (
         guild_id, user_id, poro_id, caught_ts,
@@ -175,14 +194,10 @@ function processNetsForSpawn(guildId, poro, stats) {
   }
 }
 
-// --- Message finalization helpers ---
+// -------------------- Message finalization --------------------
 
-/**
- * Edits a spawn message to show "ran away" and disables buttons.
- * This is called by TTL expiration and by the engaged flee timer.
- */
 async function markMessageRanAway(client, guildId, channelId, messageId, reasonText) {
-  // Clear the active spawn first so scheduling isn't blocked even if edit fails
+  // Clear the active flag first so future spawns aren't blocked even if editing fails.
   const active = getActiveSpawn(guildId);
   if (active && active.message_id === messageId) {
     clearActiveSpawn(guildId);
@@ -215,34 +230,31 @@ async function markMessageRanAway(client, guildId, channelId, messageId, reasonT
   await msg.edit({ embeds: [ranEmbed], components: [ranRow] }).catch(() => {});
 }
 
-/**
- * Hard expiry: regardless of interaction, a spawn ends after SPAWN_TTL_MS.
- * Prevents stuck spawns and keeps channels clean.
- */
 function scheduleHardExpiry(client, guildId, channelId, messageId) {
   setTimeout(async () => {
     const active = getActiveSpawn(guildId);
     if (!active) return;
-    if (active.message_id !== messageId) return; // a newer spawn replaced it
+    if (active.message_id !== messageId) return;
 
-    await markMessageRanAway(
-      client,
-      guildId,
-      channelId,
-      messageId,
-      "Time’s up — it wandered off on its own."
-    );
+    await markMessageRanAway(client, guildId, channelId, messageId, "Time’s up — it wandered off on its own.");
   }, SPAWN_TTL_MS);
 }
 
-// --- Main spawn function ---
+// -------------------- Main spawn function --------------------
 
 async function trySpawnPoro(client, guildId) {
   const config = getGuildConfig(guildId);
   if (!config || !config.game_channel_id) return { ok: false, reason: "no_channel" };
 
+  // If there's already an active spawn, do nothing.
   const existing = getActiveSpawn(guildId);
   if (existing) return { ok: false, reason: "already_active" };
+
+  // Quiet hours: do NOT post messages between midnight and 6am.
+  // We don't schedule here (scheduler handles timing), but we prevent posting if it tries anyway.
+  if (isQuietTime()) {
+    return { ok: false, reason: "quiet_hours", nextOkTs: nextAllowedSpawnTs() };
+  }
 
   const channel = await client.channels.fetch(config.game_channel_id).catch(() => null);
   if (!channel) return { ok: false, reason: "channel_missing" };
@@ -270,39 +282,28 @@ async function trySpawnPoro(client, guildId) {
     new ButtonBuilder().setCustomId("poro_toss_berry").setLabel("Toss Berry").setStyle(ButtonStyle.Success)
   );
 
-  // Post the spawn publicly
   const message = await channel.send({ embeds: [embed], components: [row] });
 
-  // Mark this as the active spawn in DB
   setActiveSpawn(guildId, channel.id, message.id, poro.id, stats);
 
-  // Resolve offline nets silently (guaranteed)
   processNetsForSpawn(guildId, poro, stats);
 
-  // HARD expiry so spawns never get stuck
   scheduleHardExpiry(client, guildId, channel.id, message.id);
 
   return { ok: true, poro, stats };
 }
 
-/**
- * Called by buttons.js whenever a user interacts with a spawn.
- * We only do something the FIRST time anyone interacts:
- * - mark first_interaction_ts
- * - start a shorter "engaged flee window" (optional)
- *
- * Hard expiry still exists and will clean up even if this never runs.
- */
+// -------------------- Interaction hook --------------------
+
 async function onSpawnInteracted(client, guildId) {
   const spawn = getActiveSpawn(guildId);
   if (!spawn) return;
 
   const first = getFirstInteractionTs(guildId);
-  if (first !== 0) return; // already marked / already scheduled
+  if (first !== 0) return;
 
   markFirstInteraction(guildId);
 
-  // Optional: once someone engages, it will flee after a shorter window
   setTimeout(async () => {
     const active = getActiveSpawn(guildId);
     if (!active) return;
@@ -324,4 +325,7 @@ module.exports = {
   clearActiveSpawn,
   forceClearSpawn,
   onSpawnInteracted,
+  // Export helpers in case you want to use them in the scheduler later
+  isQuietTime,
+  nextAllowedSpawnTs,
 };
