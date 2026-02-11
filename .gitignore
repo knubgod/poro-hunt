@@ -14,6 +14,7 @@ poro.sqlite
 Thumbs.db
 .vscode/
 .idea/
+.prettierrrc
 
 # Logs
 *.log
