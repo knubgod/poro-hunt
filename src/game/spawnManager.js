@@ -227,7 +227,7 @@ async function markMessageRanAway(client, guildId, channelId, messageId, reasonT
       .setDisabled(true)
   );
 
-  await msg.edit({ embeds: [ranEmbed], components: [ranRow] }).catch(() => {});
+  await msg.edit({ embeds: [ranEmbed], components: [ranRow] }).catch(() => { });
 }
 
 function scheduleHardExpiry(client, guildId, channelId, messageId) {
@@ -266,14 +266,14 @@ async function trySpawnPoro(client, guildId) {
     .setTitle(`A wild ${poro.name} appears! 🐾`)
     .setDescription(
       `Rarity: **${String(poro.rarity).replace("_", " ")}**\n\n` +
-        `**Spawn Stats**\n` +
-        `• Size: **${stats.size}**\n` +
-        `• Weight: **${stats.weight}**\n` +
-        `• Throw Distance: **${stats.throwDistance}**\n` +
-        `• Fluffiness: **${stats.fluffiness}**\n` +
-        `• Hunger: **${stats.hunger}**\n\n` +
-        `Click **Catch!** to try your luck (results are private).\n` +
-        `You can also **Toss Berry** first for a better chance.`
+      `**Spawn Stats**\n` +
+      `• Size: **${stats.size}**\n` +
+      `• Weight: **${stats.weight}**\n` +
+      `• Throw Distance: **${stats.throwDistance}**\n` +
+      `• Fluffiness: **${stats.fluffiness}**\n` +
+      `• Hunger: **${stats.hunger}**\n\n` +
+      `Click **Catch!** to try your luck (results are private).\n` +
+      `You can also **Toss Berry** first for a better chance.`
     )
     .setTimestamp();
 
