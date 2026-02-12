@@ -268,8 +268,8 @@ function buildWeeklyShowcaseText(guildId) {
 
   const topLines = top.length
     ? top
-        .map((u, i) => `${i + 1}. <@${u.user_id}> — 🐾 ${u.poros_caught} (Lv ${u.level})`)
-        .join("\n")
+      .map((u, i) => `${i + 1}. <@${u.user_id}> — 🐾 ${u.poros_caught} (Lv ${u.level})`)
+      .join("\n")
     : "No catches yet 👀";
 
   return (
@@ -301,7 +301,7 @@ async function maybePostWeeklyShowcase(client) {
     const channel = await client.channels.fetch(cfg.showcase_channel_id).catch(() => null);
     if (!channel) continue;
 
-    await channel.send({ content: buildWeeklyShowcaseText(guildId) }).catch(() => {});
+    await channel.send({ content: buildWeeklyShowcaseText(guildId) }).catch(() => { });
     db.prepare(`UPDATE config SET last_weekly_showcase_ts = ? WHERE guild_id = ?`).run(Date.now(), guildId);
   }
 }
@@ -394,12 +394,12 @@ client.on("guildCreate", async (guild) => {
             channel = c;
             break;
           }
-        } catch (_) {}
+        } catch (_) { }
       }
     }
 
     if (channel) {
-      await channel.send(WELCOME_MESSAGE).catch(() => {});
+      await channel.send(WELCOME_MESSAGE).catch(() => { });
     }
   } catch (err) {
     console.error("Failed to send onboarding message:", err);
@@ -466,9 +466,9 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.isRepliable()) {
       const msg = "Something went wrong. Try again.";
       if (interaction.deferred || interaction.replied) {
-        interaction.followUp({ content: msg }).catch(() => {});
+        interaction.followUp({ content: msg }).catch(() => { });
       } else {
-        interaction.reply({ content: msg }).catch(() => {});
+        interaction.reply({ content: msg }).catch(() => { });
       }
     }
   }
